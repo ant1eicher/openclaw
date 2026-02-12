@@ -10,6 +10,8 @@ import {
   resolveAgentWorkspaceDir,
   resolveAgentDir,
 } from "../agents/agent-scope.js";
+import { DEFAULT_PROVIDER } from "../agents/defaults.js";
+import { resolveDefaultModelForAgent, parseModelRef } from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -34,6 +36,19 @@ export async function generateSlugViaLLM(params: {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-slug-"));
     tempSessionFile = path.join(tempDir, "session.jsonl");
 
+    // Use the cheapest configured model (last fallback) for slug generation.
+    // Falls back to the primary model if no fallbacks are configured.
+    const modelConfig = params.cfg.agents?.defaults?.model as
+      | { primary?: string; fallbacks?: string[] }
+      | string
+      | undefined;
+    const fallbacks = typeof modelConfig === "object" ? modelConfig?.fallbacks : undefined;
+    const slugModelRef =
+      fallbacks && fallbacks.length > 0
+        ? (parseModelRef(fallbacks[fallbacks.length - 1], DEFAULT_PROVIDER) ??
+          resolveDefaultModelForAgent({ cfg: params.cfg }))
+        : resolveDefaultModelForAgent({ cfg: params.cfg });
+
     const prompt = `Based on this conversation, generate a short 1-2 word filename slug (lowercase, hyphen-separated, no file extension).
 
 Conversation summary:
@@ -50,6 +65,8 @@ Reply with ONLY the slug, nothing else. Examples: "vendor-pitch", "api-design", 
       agentDir,
       config: params.cfg,
       prompt,
+      provider: slugModelRef.provider,
+      model: slugModelRef.model,
       timeoutMs: 15_000, // 15 second timeout
       runId: `slug-gen-${Date.now()}`,
     });
