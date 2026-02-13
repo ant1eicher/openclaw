@@ -275,6 +275,9 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
       };
       opts.abortSignal?.addEventListener("abort", stopOnAbort, { once: true });
       try {
+        // Reset backoff after a successful reconnection so transient errors
+        // don't accumulate unbounded delay over the lifetime of the process.
+        restartAttempts = 0;
         // runner.task() returns a promise that resolves when the runner stops
         await runner.task();
         if (!forceRestarted) {
