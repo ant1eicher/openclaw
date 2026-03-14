@@ -29,7 +29,11 @@ export function createEscalateTool(params: { onEscalate: (reason: string) => voi
         required: true,
       });
       params.onEscalate(reason);
-      return jsonResult({ escalated: true, reason });
+      return jsonResult({
+        escalated: true,
+        reason,
+        note: "Escalation accepted. Your output from this turn will NOT be delivered to the user. A more capable model will re-run this turn from scratch. You may stop generating.",
+      });
     },
   };
 }

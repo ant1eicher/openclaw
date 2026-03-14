@@ -148,6 +148,7 @@ export async function runAgentTurnWithFallback(params: {
   let didEscalate = false;
   let escalationProviderOverride: string | undefined;
   let escalationModelOverride: string | undefined;
+  let escalationExtraPrompt: string | undefined;
   let bootstrapPromptWarningSignaturesSeen = resolveBootstrapWarningSignaturesSeen(
     params.getActiveSessionEntry()?.systemPromptReport,
   );
@@ -210,7 +211,11 @@ export async function runAgentTurnWithFallback(params: {
         ...resolveModelFallbackOptions(params.followupRun.run),
         runId,
         ...(escalationProviderOverride && escalationModelOverride
-          ? { provider: escalationProviderOverride, model: escalationModelOverride }
+          ? {
+              provider: escalationProviderOverride,
+              model: escalationModelOverride,
+              fallbacksOverride: [],
+            }
           : {}),
         run: (provider, model, runOptions) => {
           // Notify that model selection is complete (including after fallback).
@@ -249,7 +254,11 @@ export async function runAgentTurnWithFallback(params: {
                   thinkLevel: params.followupRun.run.thinkLevel,
                   timeoutMs: params.followupRun.run.timeoutMs,
                   runId,
-                  extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
+                  extraSystemPrompt: escalationExtraPrompt
+                    ? params.followupRun.run.extraSystemPrompt
+                      ? `${params.followupRun.run.extraSystemPrompt}\n\n${escalationExtraPrompt}`
+                      : escalationExtraPrompt
+                    : params.followupRun.run.extraSystemPrompt,
                   ownerNumbers: params.followupRun.run.ownerNumbers,
                   cliSessionId,
                   bootstrapPromptWarningSignaturesSeen,
@@ -343,7 +352,11 @@ export async function runAgentTurnWithFallback(params: {
               ...senderContext,
               ...runBaseParams,
               prompt: params.commandBody,
-              extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
+              extraSystemPrompt: escalationExtraPrompt
+                ? params.followupRun.run.extraSystemPrompt
+                  ? `${params.followupRun.run.extraSystemPrompt}\n\n${escalationExtraPrompt}`
+                  : escalationExtraPrompt
+                : params.followupRun.run.extraSystemPrompt,
               toolResultFormat: (() => {
                 const channel = resolveMessageChannel(
                   params.sessionCtx.Surface,
@@ -528,6 +541,8 @@ export async function runAgentTurnWithFallback(params: {
       }
 
       // Self-escalation: if the model called the escalate tool, re-run on the escalation model.
+      // The session transcript is left intact — the escalated model sees the prior attempt and
+      // a system hint telling it to generate a fresh response (not reference the prior attempt).
       if (!didEscalate && runResult?.meta?.escalationRequested) {
         const escalation = runResult.meta.escalationRequested;
         const resolved = resolveEscalationModel(
@@ -538,6 +553,11 @@ export async function runAgentTurnWithFallback(params: {
           didEscalate = true;
           escalationProviderOverride = resolved.provider;
           escalationModelOverride = resolved.model;
+          escalationExtraPrompt =
+            "This turn was escalated from a lighter model. The previous assistant turns " +
+            "in this conversation are from that model's attempt — they were NOT delivered " +
+            "to the user. Generate your response from scratch as if you are the first " +
+            "responder. Do not reference or summarize the previous attempt.";
           log.info(
             `Self-escalation triggered: reason="${escalation.reason}" → ${resolved.provider}/${resolved.model}`,
           );

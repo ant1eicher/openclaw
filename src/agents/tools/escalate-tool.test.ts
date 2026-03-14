@@ -17,10 +17,14 @@ describe("createEscalateTool", () => {
     expect(captured).toBe("complex reasoning needed");
   });
 
-  it("returns a JSON result indicating escalation", async () => {
+  it("returns a JSON result with escalation note", async () => {
     const tool = createEscalateTool({ onEscalate: () => {} });
-    const result = await tool.execute("call-2", { reason: "needs deeper analysis" });
-    expect(result).toBeDefined();
+    const result = (await tool.execute("call-2", { reason: "needs deeper analysis" })) as {
+      details: { escalated: boolean; reason: string; note: string };
+    };
+    expect(result.details.escalated).toBe(true);
+    expect(result.details.reason).toBe("needs deeper analysis");
+    expect(result.details.note).toContain("will NOT be delivered");
   });
 
   it("last call wins when called multiple times", async () => {
